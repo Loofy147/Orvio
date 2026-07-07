@@ -2,9 +2,6 @@
 pipeline_agent.py
 
 A 14-phase execution agent with an adaptive meta-controller and uncertainty-aware surrogate.
-Exploring -> Sleuthing -> Sifting -> Figuring -> Reckoning -> Analyzing ->
-Synthesizing -> Crystallizing -> Evaluating -> Optimizing -> Fine-tuning ->
-Honing -> Validating -> Iterating (loop back or stop)
 """
 
 from __future__ import annotations
@@ -12,14 +9,13 @@ import time
 import json
 import numpy as np
 from dataclasses import dataclass, field, asdict
-from typing import Callable, Any
+from typing import Callable, Any, Dict, List
 
 PHASES = [
     "Probing", "Exploring", "Sleuthing", "Sifting", "Figuring", "Reckoning",
     "Analyzing", "Synthesizing", "Crystallizing", "Evaluating",
     "Optimizing", "Fine-tuning", "Honing", "Validating", "Iterating",
 ]
-
 
 @dataclass
 class PhaseLog:
@@ -28,12 +24,12 @@ class PhaseLog:
     summary: dict
     duration_s: float
 
-
 class PipelineAgent:
     def __init__(
         self,
         objective_fn: Callable[[np.ndarray], float],
         bounds: np.ndarray,
+        mode: str = "SurrogateGuided",
         seed: int = 0,
         max_rounds: int = 20,
         tol: float = 1e-6,
@@ -47,22 +43,41 @@ class PipelineAgent:
         self.bounds = np.asarray(bounds, dtype=float)
         self.d = self.bounds.shape[0]
         self.rng = np.random.default_rng(seed)
+        self.mode = mode
         self.max_rounds = max_rounds
         self.tol = tol
-        self.explore_n = explore_n
-        self.sleuth_k = sleuth_k
-        self.sleuth_samples = sleuth_samples
-        self.model_interactions = model_interactions
-        self.noise_repeats = noise_repeats
 
-        self.adaptive_explore_n = explore_n
-        self.adaptive_sleuth_samples = sleuth_samples
+        # Mode-specific adjustments
+        if mode == "GlobalExploring":
+            self.explore_n = explore_n * 2
+            self.sleuth_samples = sleuth_samples // 2
+            self.model_interactions = False
+            self.radius_decay = 0.8
+        elif mode == "LocalRefining":
+            self.explore_n = explore_n // 2
+            self.sleuth_samples = sleuth_samples
+            self.model_interactions = True
+            self.radius_decay = 0.4
+        elif mode == "NoisyMode":
+            self.explore_n = explore_n
+            self.sleuth_samples = sleuth_samples
+            self.model_interactions = True
+            self.noise_repeats = max(noise_repeats, 10)
+            self.radius_decay = 0.6
+        else: # SurrogateGuided
+            self.explore_n = explore_n
+            self.sleuth_samples = sleuth_samples
+            self.model_interactions = model_interactions
+            self.radius_decay = 0.6
+
+        self.adaptive_explore_n = self.explore_n
+        self.adaptive_sleuth_samples = self.sleuth_samples
         self.opt_rounds = 3
         self.ft_rounds = 20
         self.honing_samples = 9
 
         self.n_surrogate_params = 1 + 2 * self.d + (
-            self.d * (self.d - 1) // 2 if model_interactions else 0
+            self.d * (self.d - 1) // 2 if self.model_interactions else 0
         )
 
         self.log: list[PhaseLog] = []
@@ -148,7 +163,7 @@ class PipelineAgent:
         t0 = time.time()
         self.current_phase = "Sleuthing"
         pts, scores = self.ctx["explore_pts"], self.ctx["explore_scores"]
-        idx = np.argsort(scores)[: self.sleuth_k]
+        idx = np.argsort(scores)[: 5] # sleuth_k
         leads = pts[idx]
         local_r = self.radius * 0.2
         new_pts, new_scores = [], []
@@ -163,7 +178,7 @@ class PipelineAgent:
         self.ctx["sleuth_pts"] = np.vstack([pts, new_pts])
         self.ctx["sleuth_scores"] = np.concatenate([scores, new_scores])
         self._record(round_, "Sleuthing", {
-            "leads_investigated": self.sleuth_k,
+            "leads_investigated": 5,
             "samples_per_lead": n_samples,
             "new_samples": len(new_scores),
             "best_score": float(self.ctx["sleuth_scores"].min()),
@@ -241,8 +256,6 @@ class PipelineAgent:
         coef = self.ctx["surrogate_coef"]
         cov = self.ctx["surrogate_cov"]
 
-        # Uncertainty-aware selection (LCB)
-        # We sample a few points along the gradient and pick the one with best score - 2*sigma
         steps = np.linspace(0.1, 0.5, 5) * self.radius
         proposals = [self._clip(base_x - s * grad / gnorm) for s in steps]
 
@@ -392,7 +405,7 @@ class PipelineAgent:
         else:
             action = "refine"
             self.center = self.ctx["current_x"]
-            self.radius *= 0.6
+            self.radius *= self.radius_decay
         self._record(round_, "Iterating", {"action": action}, t0)
         self.current_phase = None
         return hard_converged
@@ -428,3 +441,99 @@ class PipelineAgent:
 
     def dump_log(self, path):
         with open(path, "w") as fh: json.dump([asdict(p) for p in self.log], fh, indent=2, default=str)
+
+
+class TaskTyper:
+    def __init__(self, objective_fn: Callable, bounds: np.ndarray, seed: int = 42):
+        self.f = objective_fn
+        self.bounds = bounds
+        self.d = bounds.shape[0]
+        self.rng = np.random.default_rng(seed)
+
+    def characterize(self, n_probes: int = 20) -> Dict[str, Any]:
+        """Probe the objective to determine its characteristics."""
+        pts = self.bounds[:, 0] + self.rng.uniform(size=(n_probes, self.d)) * (self.bounds[:, 1] - self.bounds[:, 0])
+
+        # Test for determinism and noise
+        x0 = pts[0]
+        v1 = self.f(x0)
+        v2 = self.f(x0)
+        is_deterministic = abs(v1 - v2) <= 1e-12 * max(1.0, abs(v1))
+
+        noise_std = 0.0
+        if not is_deterministic:
+            repeats = [self.f(x0) for _ in range(10)]
+            noise_std = np.std(repeats)
+
+        # Test for smoothness/linearity (very basic)
+        scores = np.array([self.f(p) for p in pts])
+
+        return {
+            "is_deterministic": is_deterministic,
+            "noise_std": noise_std,
+            "d": self.d,
+            "val_range": (float(np.min(scores)), float(np.max(scores))),
+        }
+
+class Governor:
+    def __init__(
+        self,
+        objective_fn: Callable[[np.ndarray], float],
+        bounds: np.ndarray,
+        total_eval_budget: int = 5000,
+        seed: int = 0
+    ):
+        self.f = objective_fn
+        self.bounds = bounds
+        self.budget = total_eval_budget
+        self.rng = np.random.default_rng(seed)
+        self.typer = TaskTyper(objective_fn, bounds, seed=seed)
+        self.results = []
+        self.best_x = None
+        self.best_score = np.inf
+
+    def run(self):
+        # 1. Task Typing
+        char = self.typer.characterize(n_probes=10)
+        evals_used = 20 # 10 probes + 10 repeats for noise
+
+        # 2. Strategy Selection
+        if not char["is_deterministic"]:
+            strategy = "NoisyMode"
+            modes = ["NoisyMode"]
+        elif char["d"] > 10:
+            strategy = "GlobalExploring"
+            modes = ["GlobalExploring", "SurrogateGuided"]
+        else:
+            strategy = "Portfolio"
+            modes = ["SurrogateGuided", "LocalRefining", "GlobalExploring"]
+
+        # 3. Budget Orchestration & Portfolio Execution
+        budget_per_mode = (self.budget - evals_used) // len(modes)
+
+        for mode in modes:
+            print(f"Governor: Running mode {mode}...")
+            # We estimate max_rounds based on budget
+            # Each round uses roughly (explore_n + sleuth_k*sleuth_samples + ...) evals
+            # Roughly 150-200 evals per round
+            max_r = max(5, budget_per_mode // 200)
+
+            agent = PipelineAgent(self.f, self.bounds, mode=mode, max_rounds=max_r, seed=self.rng.integers(10000))
+            res = agent.run()
+            evals_used += res["eval_count"]
+            self.results.append(res)
+
+            if res["best_score"] < self.best_score:
+                self.best_score = res["best_score"]
+                self.best_x = res["best_x"]
+
+            if evals_used >= self.budget:
+                break
+
+        return {
+            "best_x": self.best_x,
+            "best_score": self.best_score,
+            "evals_used": evals_used,
+            "char": char,
+            "modes_run": modes
+        }
