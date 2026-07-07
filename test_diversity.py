@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import PipelineAgent
+from pipeline_agent import NumericOptimizer
 
 def multi_modal(x):
     # Multiple local minima
@@ -9,7 +9,7 @@ def main():
     d = 2
     bounds = np.array([[-2.0, 2.0]] * d)
     # Low max_rounds to force multiple restarts if we keep it small or mock stalling
-    agent = PipelineAgent(multi_modal, bounds, max_rounds=20, tol=1e-1)
+    agent = NumericOptimizer(multi_modal, bounds, max_rounds=20, tol=1e-1)
     result = agent.run()
 
     print(f"Basins archived: {len(agent.basin_archive)}")

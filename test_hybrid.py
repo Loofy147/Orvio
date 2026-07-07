@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import Governor
+from pipeline_agent import SolverOrchestrator
 
 def discrete_sphere(x):
     # Rounded values to simulate discrete domain
@@ -14,8 +14,8 @@ def main():
     # already look discrete, or we need a better heuristic.
     # In a real scenario, the user would provide an objective that only makes sense on integers.
 
-    print("--- Testing Governor on Discrete Sphere ---")
-    gov = Governor(discrete_sphere, bounds, budget=1000)
+    print("--- Testing SolverOrchestrator on Discrete Sphere ---")
+    gov = SolverOrchestrator(discrete_sphere, bounds, budget=1000)
     res = gov.run()
     print(f"Best score: {res['best_score']}")
     print(f"Best x: {res['best_x']}")
