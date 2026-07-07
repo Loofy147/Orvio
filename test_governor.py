@@ -11,18 +11,18 @@ def main():
     bounds = np.array([[-2.0, 2.0]] * 2)
 
     print("--- Testing Governor on Rosenbrock (Deterministic) ---")
-    gov1 = Governor(rosenbrock, bounds, total_eval_budget=2000)
+    gov1 = Governor(rosenbrock, bounds, budget=2000)
     res1 = gov1.run()
     print(f"Best score: {res1['best_score']}")
-    print(f"Modes run: {res1['modes_run']}")
-    print(f"Evals used: {res1['evals_used']}")
+    print(f"Modes run: {res1['modes']}")
+    print(f"Evals used: {res1['evals']}")
 
     print("\n--- Testing Governor on Noisy Sphere ---")
-    gov2 = Governor(noisy_sphere, bounds, total_eval_budget=2000)
+    gov2 = Governor(noisy_sphere, bounds, budget=2000)
     res2 = gov2.run()
     print(f"Best score: {res2['best_score']}")
-    print(f"Modes run: {res2['modes_run']}")
-    print(f"Evals used: {res2['evals_used']}")
+    print(f"Modes run: {res2['modes']}")
+    print(f"Evals used: {res2['evals']}")
 
 if __name__ == "__main__":
     main()
