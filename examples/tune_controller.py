@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import SolverOrchestrator
+from numeric_optimizer import SolverOrchestrator
 
 def simulate_system(pid_params, steps=100, target=1.0):
     """

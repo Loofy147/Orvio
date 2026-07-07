@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import NumericOptimizer
+from numeric_optimizer import NumericOptimizer
 
 def main():
     d = 2

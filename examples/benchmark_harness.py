@@ -1,6 +1,6 @@
 import numpy as np
 import time
-from pipeline_agent import SolverOrchestrator
+from numeric_optimizer import SolverOrchestrator
 
 def sphere(x): return np.sum(x**2)
 def rosenbrock(x): return sum(100.0*(x[1:] - x[:-1]**2.0)**2.0 + (1.0 - x[:-1])**2.0)

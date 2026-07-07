@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import SolverOrchestrator
+from numeric_optimizer import SolverOrchestrator
 
 def rosenbrock(x):
     return sum(100.0*(x[1:] - x[:-1]**2.0)**2.0 + (1.0 - x[:-1])**2.0)

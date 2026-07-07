@@ -1,5 +1,5 @@
 import numpy as np
-from pipeline_agent import SolverOrchestrator
+from numeric_optimizer import SolverOrchestrator
 
 def discrete_sphere(x):
     # Rounded values to simulate discrete domain
