@@ -2,19 +2,12 @@ import numpy as np
 from numeric_optimizer import NumericOptimizer
 
 def multi_modal(x):
-    # Multiple local minima
     return np.sum(np.sin(5*x) + x**2)
 
-def main():
+def test_basin_hopping():
     d = 2
     bounds = np.array([[-2.0, 2.0]] * d)
-    # Low max_rounds to force multiple restarts if we keep it small or mock stalling
     agent = NumericOptimizer(multi_modal, bounds, max_rounds=20, tol=1e-1)
     result = agent.run()
-
-    print(f"Basins archived: {len(agent.basin_archive)}")
-    for i, b in enumerate(agent.basin_archive):
-        print(f"Basin {i}: {b}")
-
-if __name__ == "__main__":
-    main()
+    # Ensure basin archive exists
+    assert 'basin_archive' in result

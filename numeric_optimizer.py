@@ -81,10 +81,13 @@ class NumericOptimizer:
     def __init__(
         self, objective_fn: Callable, bounds: np.ndarray, mode: str = "SurrogateGuided",
         surrogate_model: SurrogateModel = None, seed: int = 0, max_rounds: int = 20,
-        tol: float = 1e-6, budget: int = 2000
+        tol: float = 1e-6, budget: int = 2000, constraints: List[Callable] = None,
+        penalty_factor: float = 1e6
     ):
         self.f, self.bounds, self.d, self.rng = objective_fn, np.asarray(bounds, dtype=float), bounds.shape[0], np.random.default_rng(seed)
         self.mode, self.max_rounds, self.tol, self.budget, self.seed = mode, max_rounds, tol, budget, seed
+        self.constraints = constraints or []
+        self.penalty_factor = penalty_factor
         self.explore_n, self.sleuth_samples, self.noise_repeats, self.radius_decay = 40, 8, 5, 0.6
         model_int = True
         if mode == "GlobalExploring": self.explore_n, self.sleuth_samples, model_int, self.radius_decay = 80, 4, False, 0.8
@@ -102,7 +105,12 @@ class NumericOptimizer:
 
     def _clip(self, x): return np.clip(x, self.bounds[:, 0], self.bounds[:, 1])
     def _eval(self, x):
-        score = float(self.f(x)); self.eval_count += 1
+        raw_score = float(self.f(x)); self.eval_count += 1
+        penalty = 0.0
+        for c in self.constraints:
+            val = c(x)
+            if val > 0: penalty += val * self.penalty_factor
+        score = raw_score + penalty
         if self.current_phase:
             self.phase_stats[self.current_phase]["evals"] += 1
             if self.best_score_ever != np.inf and score < self.best_score_ever:
@@ -234,8 +242,10 @@ class TaskTyper:
         return {"is_deterministic": is_det, "noise_std": noise_std, "ruggedness": ruggedness, "is_discrete": is_discrete, "d": self.d}
 
 class SolverOrchestrator:
-    def __init__(self, objective_fn: Callable, bounds: np.ndarray, budget: int = 5000, seed: int = 0):
+    def __init__(self, objective_fn: Callable, bounds: np.ndarray, budget: int = 5000, seed: int = 0, constraints: List[Callable] = None, penalty_factor: float = 1e6):
         self.f, self.bounds, self.budget, self.rng = objective_fn, bounds, budget, np.random.default_rng(seed)
+        self.constraints = constraints or []
+        self.penalty_factor = penalty_factor
         self.typer, self.best_x, self.best_score = TaskTyper(objective_fn, bounds, seed=seed), None, np.inf
     def run(self):
         char = self.typer.characterize(10); used = 20; surrogate = DiscreteSurrogate() if char["is_discrete"] else None
@@ -249,7 +259,11 @@ class SolverOrchestrator:
         report.append(f"Orchestrator: Ruggedness estimate = {char['ruggedness']:.2f}.")
         report.append(f"Orchestrator: Portfolio selection: {modes}.")
         for mode in modes:
-            agent = NumericOptimizer(self.f, self.bounds, mode=mode, surrogate_model=surrogate, budget=b_per_mode, seed=self.rng.integers(10000))
+            agent = NumericOptimizer(
+                self.f, self.bounds, mode=mode, surrogate_model=surrogate,
+                budget=b_per_mode, seed=self.rng.integers(10000),
+                constraints=self.constraints, penalty_factor=self.penalty_factor
+            )
             res = agent.run(); used += res["eval_count"]; results.append(res)
             if res["best_score"] < self.best_score: self.best_score, self.best_x = res["best_score"], res["best_x"]
             if used >= self.budget: break
