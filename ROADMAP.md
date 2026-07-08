@@ -22,6 +22,6 @@
 - [ ] Integration with specific hyperparameter tuning backends
 
 ## Phase 5: Distributed Execution [PLANNED]
-- [ ] Parallel portfolio execution
+- [x] Parallel portfolio execution
 - [ ] Asynchronous phase transformations
 - [ ] Centralized result archive for large-scale experiments
