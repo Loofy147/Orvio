@@ -18,10 +18,10 @@
 
 ## Phase 4: Domain Specialization [IN PROGRESS]
 - [x] Discrete/Categorical domain support via pluggable surrogates
-- [ ] Support for constrained optimization (penalty methods)
+- [x] Support for constrained optimization (penalty methods)
 - [ ] Integration with specific hyperparameter tuning backends
 
 ## Phase 5: Distributed Execution [PLANNED]
-- [ ] Parallel portfolio execution
+- [x] Parallel portfolio execution
 - [ ] Asynchronous phase transformations
 - [ ] Centralized result archive for large-scale experiments
