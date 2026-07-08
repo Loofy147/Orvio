@@ -1,14 +1,16 @@
 """
 numeric_optimizer.py - Specialized Numeric Optimization Engine
-Enhanced with Observability and Steerability for a Guided Solving UX.
+Enhanced with Observability, Parallelism, and Structured Goals.
 """
 
 from __future__ import annotations
 import time
 import json
 import numpy as np
+import threading
 from dataclasses import dataclass, field, asdict
 from typing import Callable, Any, Dict, List, Tuple, Protocol, Iterator, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PHASES = [
     "Probing", "Exploring", "Sleuthing", "Sifting", "Figuring", "Reckoning",
@@ -29,6 +31,15 @@ class PhaseLog:
     phase: str
     summary: dict
     duration_s: float
+
+@dataclass
+class OptimizationGoal:
+    objective: Callable
+    bounds: np.ndarray
+    constraints: List[Callable] = field(default_factory=list)
+    penalty_factor: float = 1e6
+    target_score: float = -np.inf
+    success_criteria: Optional[Callable[[float, np.ndarray], bool]] = None
 
 class SurrogateModel(Protocol):
     def fit(self, X: np.ndarray, y: np.ndarray) -> None: ...
@@ -69,9 +80,10 @@ class QuadraticSurrogate:
         best_lcb, best_p = np.inf, proposals[0]
         for p in proposals:
             phi = self._get_feats(p[None, :], self.actual_interactions)[0]
-            lcb = phi @ self.coef - 2.0 * np.sqrt(max(0, phi @ self.cov @ phi))
+            lcb = phi @ self.coef - 2.0 * np.sqrt(max(0, phi @ self.get_cov() @ phi))
             if lcb < best_lcb: best_lcb, best_p = lcb, p
         return best_p
+    def get_cov(self): return self.cov if self.cov is not None else np.eye(self.n_params)
     def get_summary(self) -> dict: return {"n_params": self.n_params, "ridge_lambda": self.lam, "interactions": self.actual_interactions}
 
 class DiscreteSurrogate:
@@ -85,20 +97,33 @@ class DiscreteSurrogate:
         return p
     def get_summary(self) -> dict: return {"model": "DiscreteNeighborhood"}
 
+class GlobalResultTracker:
+    def __init__(self):
+        self.best_score = np.inf
+        self.best_x = None
+        self.lock = threading.Lock()
+    def update(self, score, x):
+        with self.lock:
+            if score < self.best_score:
+                self.best_score, self.best_x = score, x.copy()
+    def get_best(self):
+        with self.lock:
+            return self.best_score, self.best_x
+
 class NumericOptimizer:
     def __init__(
-        self, objective_fn: Callable, bounds: np.ndarray, mode: str = "SurrogateGuided",
+        self, goal: OptimizationGoal, mode: str = "SurrogateGuided",
         surrogate_model: SurrogateModel = None, seed: int = 0, max_rounds: int = 20,
-        tol: float = 1e-6, budget: int = 2000, constraints: List[Callable] = None,
-        penalty_factor: float = 1e6, target_score: float = -np.inf,
-        callback: Optional[Callable[[dict], None]] = None
+        tol: float = 1e-6, budget: int = 2000,
+        callback: Optional[Callable[[dict], None]] = None,
+        shared_tracker: Optional[GlobalResultTracker] = None
     ):
-        self.f, self.bounds, self.d, self.rng = objective_fn, np.asarray(bounds, dtype=float), bounds.shape[0], np.random.default_rng(seed)
+        self.goal = goal
+        self.f, self.bounds = goal.objective, np.asarray(goal.bounds, dtype=float)
+        self.d, self.rng = self.bounds.shape[0], np.random.default_rng(seed)
         self.mode, self.max_rounds, self.tol, self.budget, self.seed = mode, max_rounds, tol, budget, seed
-        self.constraints = constraints or []
-        self.penalty_factor = penalty_factor
-        self.target_score = target_score
         self.callback = callback
+        self.shared_tracker = shared_tracker
 
         self.explore_n, self.sleuth_samples, self.noise_repeats, self.radius_decay = 40, 8, 5, 0.6
         model_int = True
@@ -114,20 +139,32 @@ class NumericOptimizer:
         self.best_x_ever, self.best_score_ever, self.stagnant_rounds, self.eval_count, self.current_phase = None, np.inf, 0, 0, None
         self.phase_stats = {p: {"improvement": 0.0, "evals": 0} for p in PHASES}
         self.is_deterministic, self.basin_archive = None, []
+        self.last_round, self.converged = 0, False
 
     def _clip(self, x): return np.clip(x, self.bounds[:, 0], self.bounds[:, 1])
     def _eval(self, x):
         raw_score = float(self.f(x)); self.eval_count += 1
         penalty = 0.0
-        for c in self.constraints:
+        for c in self.goal.constraints:
             val = c(x)
-            if val > 0: penalty += val * self.penalty_factor
+            if val > 0: penalty += val * self.goal.penalty_factor
         score = raw_score + penalty
+
+        if self.shared_tracker:
+            g_score, g_x = self.shared_tracker.get_best()
+            if g_score < self.best_score_ever:
+                self.best_score_ever, self.best_x_ever = g_score, g_x.copy()
+
         if self.current_phase:
             self.phase_stats[self.current_phase]["evals"] += 1
             if self.best_score_ever != np.inf and score < self.best_score_ever:
                 self.phase_stats[self.current_phase]["improvement"] += (self.best_score_ever - score)
-        if score < self.best_score_ever: self.best_score_ever, self.best_x_ever = score, x.copy()
+
+        if score < self.best_score_ever:
+            self.best_score_ever, self.best_x_ever = score, x.copy()
+            if self.shared_tracker:
+                self.shared_tracker.update(score, x)
+
         return score
 
     def _probe_determinism(self):
@@ -149,7 +186,6 @@ class NumericOptimizer:
         self.honing_samples = scale(self.honing_samples, utils["Honing"], 3, 21)
     def _should_skip(self, p): return self.phase_stats[p]["evals"] >= 50 and self.phase_stats[p]["improvement"] == 0
 
-    # 14-Phase Implementation
     def exploring(self, r):
         t0 = time.time(); self.current_phase = "Exploring"
         pts = self._clip(self.center + self.rng.uniform(-1, 1, (self.adaptive_explore_n, self.d)) * self.radius)
@@ -234,6 +270,12 @@ class NumericOptimizer:
         else: action, reason, self.center, self.radius = "refine", "Improvement found; refining locally.", self.ctx["current_x"], self.radius * self.radius_decay
         self._record(round_, "Iterating", {"action": action, "reason": reason}, t0); self.current_phase = None; return hard_conv
 
+    def _met_success(self) -> bool:
+        if self.best_score_ever <= self.goal.target_score: return True
+        if self.goal.success_criteria and self.best_x_ever is not None:
+            return self.goal.success_criteria(self.best_score_ever, self.best_x_ever)
+        return False
+
     def run_iterator(self) -> Iterator[dict]:
         if self.is_deterministic is None:
             self._probe_determinism()
@@ -241,8 +283,9 @@ class NumericOptimizer:
 
         best = np.inf
         for round_ in range(1, self.max_rounds + 1):
+            self.last_round = round_
             if self.eval_count >= self.budget: break
-            if self.best_score_ever <= self.target_score: break
+            if self._met_success(): break
             if round_ > 2: self._adapt_budget()
 
             for phase in ["exploring", "sleuthing", "sifting", "figuring", "reckoning", "analyzing", "synthesizing", "crystallizing", "evaluating"]:
@@ -261,6 +304,7 @@ class NumericOptimizer:
             yield {"type": "phase", "phase": "Validating", "round": round_, "state": self.get_state()}
 
             conv = self.iterating(round_, best)
+            self.converged = conv
             yield {"type": "phase", "phase": "Iterating", "round": round_, "state": self.get_state()}
 
             best = self.ctx["current_score"]; self.ctx["best_score_so_far"] = best
@@ -268,18 +312,15 @@ class NumericOptimizer:
             if conv: break
 
     def run(self):
-        last_round = 0
-        conv = False
-        for msg in self.run_iterator():
-            if msg["type"] == "phase" and msg["phase"] == "Iterating":
-                last_round = msg["round"]
-                if "Converged" in msg["state"]["log"][-1].summary.get("reason", ""):
-                    conv = True
+        for _ in self.run_iterator(): pass
+        return self._finalize()
+
+    def _finalize(self) -> dict:
         return {
             "best_x": self.best_x_ever.tolist() if self.best_x_ever is not None else None,
             "best_score": self.best_score_ever,
-            "rounds_run": last_round,
-            "converged": conv,
+            "rounds_run": self.last_round,
+            "converged": self.converged,
             "eval_count": self.eval_count,
             "is_deterministic": self.is_deterministic,
             "phase_stats": self.phase_stats,
@@ -297,7 +338,7 @@ class NumericOptimizer:
             "radius": self.radius,
             "current_phase": self.current_phase,
             "basin_count": len(self.basin_archive),
-            "log": self.log[-5:] # Last 5 logs for context
+            "log": self.log[-5:]
         }
 
     def export_data(self) -> dict:
@@ -307,6 +348,19 @@ class NumericOptimizer:
             "history": [asdict(l) for l in self.log],
             "basin_archive": self.basin_archive
         }
+
+class GlobalResultTracker:
+    def __init__(self):
+        self.best_score = np.inf
+        self.best_x = None
+        self.lock = threading.Lock()
+    def update(self, score, x):
+        with self.lock:
+            if score < self.best_score:
+                self.best_score, self.best_x = score, x.copy()
+    def get_best(self):
+        with self.lock:
+            return self.best_score, self.best_x
 
 class TaskTyper:
     def __init__(self, objective_fn: Callable, bounds: np.ndarray, seed: int = 42):
@@ -321,17 +375,18 @@ class TaskTyper:
 
 class SolverOrchestrator:
     def __init__(
-        self, objective_fn: Callable, bounds: np.ndarray, budget: int = 5000,
-        seed: int = 0, constraints: List[Callable] = None, penalty_factor: float = 1e6,
-        target_score: float = -np.inf, callback: Optional[Callable] = None
+        self, goal: OptimizationGoal, budget: int = 5000, seed: int = 0,
+        callback: Optional[Callable] = None, parallel: bool = False
     ):
-        self.f, self.bounds, self.budget, self.rng = objective_fn, bounds, budget, np.random.default_rng(seed)
-        self.constraints = constraints or []
-        self.penalty_factor = penalty_factor
-        self.target_score = target_score
+        self.goal = goal
+        self.budget, self.rng = budget, np.random.default_rng(seed)
         self.callback = callback
-        self.typer, self.best_x, self.best_score = TaskTyper(objective_fn, bounds, seed=seed), None, np.inf
+        self.parallel = parallel
+        self.typer = TaskTyper(goal.objective, goal.bounds, seed=seed)
+        self.best_x, self.best_score = None, np.inf
         self.portfolio_results = []
+        self.optimization_report = []
+        self.tracker = GlobalResultTracker()
 
     def run_iterator(self) -> Iterator[dict]:
         char = self.typer.characterize(10); used = 20; surrogate = DiscreteSurrogate() if char["is_discrete"] else None
@@ -342,31 +397,44 @@ class SolverOrchestrator:
         elif char["d"] > 12: modes = ["GlobalExploring", "SurrogateGuided"]
         else: modes = ["SurrogateGuided", "LocalRefining"]
 
-        b_per_mode = (self.budget - used) // len(modes); results = []; report = []
-        report.append(f"Orchestrator: Problem dimension d={char['d']}. Detected is_discrete={char['is_discrete']}.")
-        report.append(f"Orchestrator: Detected is_deterministic={char['is_deterministic']} (noise_std={char['noise_std']:.4e}).")
-        report.append(f"Orchestrator: Ruggedness estimate = {char['ruggedness']:.2f}.")
-        report.append(f"Orchestrator: Portfolio selection: {modes}.")
-
-        for mode in modes:
-            if used >= self.budget or self.best_score <= self.target_score: break
-            yield {"type": "mode_start", "mode": mode}
-            agent = NumericOptimizer(
-                self.f, self.bounds, mode=mode, surrogate_model=surrogate,
-                budget=b_per_mode, seed=self.rng.integers(10000),
-                constraints=self.constraints, penalty_factor=self.penalty_factor,
-                target_score=self.target_score, callback=self.callback
-            )
-            for msg in agent.run_iterator():
-                yield msg
-
-            res = agent.run(); used += res["eval_count"]; results.append(res)
-            if res["best_score"] < self.best_score:
-                self.best_score, self.best_x = res["best_score"], res["best_x"]
-            yield {"type": "mode_end", "mode": mode, "best_score": self.best_score}
-
-        self.portfolio_results = results
+        b_per_mode = (self.budget - used) // len(modes); report = []
+        report.append(f"Orchestrator: Portfolio selection: {modes}. Parallel={self.parallel}")
         self.optimization_report = report
+
+        if self.parallel:
+            with ThreadPoolExecutor(max_workers=len(modes)) as executor:
+                futures = {}
+                for mode in modes:
+                    agent = NumericOptimizer(
+                        self.goal, mode=mode, surrogate_model=surrogate,
+                        budget=b_per_mode, seed=self.rng.integers(10000),
+                        callback=self.callback, shared_tracker=self.tracker
+                    )
+                    futures[executor.submit(agent.run)] = mode
+                for future in as_completed(futures):
+                    res = future.result()
+                    self.portfolio_results.append(res)
+                    if res["best_score"] < self.best_score:
+                        self.best_score, self.best_x = res["best_score"], res["best_x"]
+                    yield {"type": "mode_end", "mode": futures[future], "best_score": self.best_score}
+        else:
+            for mode in modes:
+                if used >= self.budget or self.best_score <= self.goal.target_score: break
+                yield {"type": "mode_start", "mode": mode}
+                agent = NumericOptimizer(
+                    self.goal, mode=mode, surrogate_model=surrogate,
+                    budget=b_per_mode, seed=self.rng.integers(10000),
+                    callback=self.callback, shared_tracker=self.tracker
+                )
+                for msg in agent.run_iterator():
+                    yield msg
+
+                final_res = agent._finalize()
+                used += final_res["eval_count"]
+                self.portfolio_results.append(final_res)
+                if final_res["best_score"] < self.best_score:
+                    self.best_score, self.best_x = final_res["best_score"], final_res["best_x"]
+                yield {"type": "mode_end", "mode": mode, "best_score": self.best_score}
 
     def run(self):
         for _ in self.run_iterator(): pass
