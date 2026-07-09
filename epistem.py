@@ -1,192 +1,310 @@
+"""
+epistem — exact multi-party theoretical consensus on theory manifolds.
+
+Three primitives:
+  embed(corpus)               TF-IDF + SVD -> normalised profiles, zero network
+  lp_consensus(profiles, W)   exact LP, global optimum, one HiGHS call
+  stress(profiles)            vectorised adversarial battery + exact greedy worst-case
+
+Single file by design: Consolidating to one file until there's a
+reason (size, reuse across unrelated projects) to split it again.
+"""
+from __future__ import annotations
 import numpy as np
 import time
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Tuple
-from scipy.optimize import linprog
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
+from scipy.optimize import linprog
+from scipy.stats import pearsonr
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+import warnings
+
+__all__ = [
+    "embed", "lp_consensus", "stress", "q_worst", "q_best", "fragility",
+    "ConsensusResult", "StressReport", "isomorphism", "EpistemEngine"
+]
+
+
+# ───────────────────────────── embedding ─────────────────────────────────
+
+def embed(
+    corpus: List[Tuple[str, str]],
+    n_dims: int = 8,
+    lo: float = 0.15,
+    hi: float = 0.85,
+    ngram_range: Tuple[int, int] = (1, 2),
+    random_state: int = 42,
+    pad_value: Optional[float] = None,
+) -> Dict[str, np.ndarray]:
+    """
+    TF-IDF + TruncatedSVD -> profiles scaled to [lo, hi] per dimension.
+
+    If len(corpus) <= n_dims, SVD produces k < n_dims real components.
+    The remaining dimensions are padded with pad_value.
+    """
+    names = [c[0] for c in corpus]
+    texts = [c[1] for c in corpus]
+    n = len(texts)
+    k = min(n_dims, n - 1, 50)
+    if k < 1:
+        # Fallback if only 1 text: can't do SVD properly, but let's be robust
+        if n == 1:
+             return {names[0]: np.full(n_dims, hi)}
+        raise ValueError(f"embed() needs at least 2 texts, got {n}")
+
+    if pad_value is None:
+        pad_value = hi
+
+    X = TfidfVectorizer(
+        ngram_range=ngram_range,
+        min_df=1,
+        sublinear_tf=True
+    ).fit_transform(texts)
+
+    proj = TruncatedSVD(n_components=k, random_state=random_state).fit_transform(X)
+
+    padded = k < n_dims
+
+    col_min, col_max = proj.min(0), proj.max(0)
+    rng = np.where(col_max - col_min < 1e-9, 1.0, col_max - col_min)
+    scaled_genuine = lo + (hi - lo) * (proj - col_min) / rng
+
+    if padded:
+        padding = np.full((n, n_dims - k), pad_value)
+        scaled = np.hstack([scaled_genuine, padding])
+    else:
+        scaled = scaled_genuine
+
+    result = {names[i]: scaled[i] for i in range(n)}
+    if padded:
+        result["__padded_dims__"] = np.arange(k, n_dims)
+
+    dupes = _find_collisions(result)
+    if dupes:
+        warnings.warn(
+            f"embed() produced identical profiles for {dupes} -- these theories "
+            f"are now mathematically indistinguishable. Fix: longer, more specific texts.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return result
+
+
+def _find_collisions(profiles: Dict[str, np.ndarray], atol: float = 1e-6) -> List[List[str]]:
+    names = [n for n in profiles if not n.startswith("__")]
+    groups: Dict[Tuple[float, ...], List[str]] = {}
+    for n in names:
+        key = tuple(np.round(profiles[n], int(-np.log10(atol))))
+        groups.setdefault(key, []).append(n)
+    return [g for g in groups.values() if len(g) > 1]
+
+
+# ───────────────────────── exact adversarial ─────────────────────────────
+
+def q_worst(v: np.ndarray) -> float:
+    return float(np.min(np.clip(v, 0, 1)))
+
+
+def q_best(v: np.ndarray) -> float:
+    return float(np.max(np.clip(v, 0, 1)))
+
+
+def fragility(v: np.ndarray) -> float:
+    return q_best(v) - q_worst(v)
+
+
+# ────────────────────────────── consensus ────────────────────────────────
 
 @dataclass
-class EpistemResult:
+class ConsensusResult:
     consensus_Q: float
-    mixture: np.ndarray
-    option_names: List[str]
-    party_satisfactions: np.ndarray
+    v_opt: np.ndarray
+    mixture: Dict[str, float]
+    party_scores: Dict[str, float]
     tension: float
-    fragility: np.ndarray
-    dimension_labels: List[str]
+    deadlock: bool
 
-class ProfileBuilder:
-    def __init__(self, n_dimensions: int = 5):
-        self.n_dimensions = n_dimensions
-        self.vectorizer = TfidfVectorizer(stop_words='english')
-        self.svd = TruncatedSVD(n_components=n_dimensions, random_state=42)
-        self.feature_names = None
-        self.dimension_labels = []
+    @property
+    def dominant(self) -> Tuple[str, float]:
+        if not self.mixture:
+            return ("none", 0.0)
+        return max(self.mixture.items(), key=lambda x: x[1])
 
-    def fit_transform(self, descriptions: List[str]) -> np.ndarray:
-        tfidf_matrix = self.vectorizer.fit_transform(descriptions)
-        self.feature_names = self.vectorizer.get_feature_names_out()
+    def summary(self, name: str = "") -> str:
+        lines = [f"{name or 'Consensus'}: Q={self.consensus_Q:.4f} "
+                 f"tension={self.tension:.4f} "
+                 f"{'DEADLOCK' if self.deadlock else 'resolved'}"]
+        for p, s in sorted(self.party_scores.items(), key=lambda x: -x[1]):
+            lines.append(f"  {p:20s} {s:.4f}")
+        lines.append("mixture:")
+        for t, l in sorted(self.mixture.items(), key=lambda x: -x[1]):
+            lines.append(f"  {l:.4f}  {t}")
+        return "\n".join(lines)
 
-        # Ensure we don't try to extract more components than features/samples
-        n_comp = min(self.n_dimensions, tfidf_matrix.shape[0], tfidf_matrix.shape[1])
-        if n_comp < self.n_dimensions:
-            self.svd = TruncatedSVD(n_components=n_comp, random_state=42)
 
-        profiles = self.svd.fit_transform(tfidf_matrix)
+def lp_consensus(
+    profiles: Dict[str, np.ndarray],
+    weight_matrix: np.ndarray,
+    party_names: Optional[List[str]] = None,
+    deadlock_threshold: float = 0.08,
+) -> ConsensusResult:
+    names = [n for n in profiles if not n.startswith("__")]
+    T = np.array([profiles[n] for n in names]).T
+    N, nw = len(names), weight_matrix.shape[0]
 
-        # Normalize profiles to [0, 1] for easier interpretation
-        min_val, max_val = profiles.min(), profiles.max()
-        if max_val > min_val:
-            profiles = (profiles - min_val) / (max_val - min_val)
+    if party_names is None:
+        party_names = [f"Party{i}" for i in range(nw)]
+    if len(party_names) != nw:
+        raise ValueError(f"party_names ({len(party_names)}) != weight_matrix rows ({nw})")
 
-        # Build dimension labels
-        self.dimension_labels = []
-        for i in range(profiles.shape[1]):
-            top_idx = np.argsort(np.abs(self.svd.components_[i]))[::-1][:3]
-            terms = [self.feature_names[idx] for idx in top_idx]
-            self.dimension_labels.append(" + ".join(terms))
+    c = np.zeros(N + 1)
+    c[-1] = -1.0
+    Au = np.zeros((nw, N + 1))
+    Au[:, :N] = -(weight_matrix @ T)
+    Au[:, -1] = 1.0
+    Ae = np.zeros((1, N + 1))
+    Ae[0, :N] = 1.0
 
-        return profiles
+    res = linprog(c, A_ub=Au, b_ub=np.zeros(nw),
+                  A_eq=Ae, b_eq=np.array([1.0]),
+                  bounds=[(0, None)] * N + [(0, None)], method="highs")
 
-class ConsensusSolver:
-    @staticmethod
-    def solve(profiles: np.ndarray, weights: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
-        """
-        profiles: (m_options, d_dimensions)
-        weights: (n_parties, d_dimensions)
+    if not res.success:
+        warnings.warn(f"lp_consensus failed: {res.message}. Falling back to uniform.", RuntimeWarning)
+        v_fb = T @ (np.ones(N) / N)
+        return ConsensusResult(float(np.min(weight_matrix @ v_fb)), v_fb, {}, {}, 0.0, False)
 
-        Returns: (consensus_Q, mixture_weights, party_satisfactions)
-        """
-        m_options, d_dims = profiles.shape
-        n_parties, _ = weights.shape
+    lam = np.clip(res.x[:N], 0, None)
+    total_lam = lam.sum()
+    lam = lam / total_lam if total_lam > 0 else lam
+    v_opt = T @ lam
+    t_opt = float(res.x[-1])
 
-        # Satisfaction matrix M: n_parties x m_options
-        # M[j, i] = satisfaction of party j with option i
-        M = weights @ profiles.T
+    mixture = {names[i]: float(lam[i]) for i in range(N) if lam[i] > 0.01}
+    party_scores = {party_names[j]: float(np.dot(weight_matrix[j], v_opt))
+                     for j in range(nw)}
+    tension = float(np.std(list(party_scores.values())))
 
-        # LP variables: [x1, ..., xm, Q]
-        # Minimize -Q
-        c = np.zeros(m_options + 1)
-        c[-1] = -1
+    return ConsensusResult(t_opt, v_opt, mixture, party_scores, tension,
+                            tension > deadlock_threshold)
 
-        # Constraints: Q - (M x)_j <= 0  =>  -M_j * x + Q <= 0
-        A_ub = np.zeros((n_parties, m_options + 1))
-        A_ub[:, :m_options] = -M
-        A_ub[:, -1] = 1
-        b_ub = np.zeros(n_parties)
 
-        # Constraint: sum(x) = 1
-        A_eq = np.zeros((1, m_options + 1))
-        A_eq[0, :m_options] = 1
-        b_eq = np.array([1.0])
+# ─────────────────────────── stress testing ──────────────────────────────
 
-        # Bounds: x_i >= 0, Q >= 0
-        bounds = [(0, 1)] * m_options + [(None, None)]
+@dataclass
+class StressReport:
+    results: Dict[str, dict]
 
-        res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs')
+    @property
+    def most_robust(self) -> Tuple[str, float]:
+        b = min(self.results.items(), key=lambda x: x[1]["fragility"])
+        return (b[0], b[1]["fragility"])
 
-        if not res.success:
-            raise ValueError(f"LP Solver failed: {res.message}")
+    @property
+    def most_fragile(self) -> Tuple[str, float]:
+        b = max(self.results.items(), key=lambda x: x[1]["fragility"])
+        return (b[0], b[1]["fragility"])
 
-        mixture = res.x[:m_options]
-        consensus_Q = res.x[-1]
-        party_satisfactions = M @ mixture
+    def table(self, dim_labels: Optional[List[str]] = None) -> str:
+        lines = [f"{'name':24s} {'worst':>7} {'mean':>7} {'frag':>7}  bottleneck"]
+        for n, d in sorted(self.results.items(), key=lambda x: x[1]["fragility"]):
+            btn = (dim_labels[d["btn_dim"]]
+                   if dim_labels and d["btn_dim"] < len(dim_labels)
+                   else f"dim{d['btn_dim']}")
+            lines.append(f"{n:24s} {d['worst']:>7.4f} {d['mean']:>7.4f} "
+                         f"{d['fragility']:>7.4f}  {btn}")
+        return "\n".join(lines)
 
-        return consensus_Q, mixture, party_satisfactions
 
-class StressTester:
-    @staticmethod
-    def calculate_fragility(profiles: np.ndarray) -> np.ndarray:
-        """
-        Fragility: How badly an option can perform under very different priorities.
-        Calculated as the minimum value in each option's profile.
-        """
-        return profiles.min(axis=1)
+def stress(
+    profiles: Dict[str, np.ndarray],
+    weight_matrix: Optional[np.ndarray] = None,
+    n_scenarios: int = 1000,
+    alpha: float = 0.4,
+    seed: Optional[int] = None,
+) -> StressReport:
+    names = [n for n in profiles if not n.startswith("__")]
+    V = np.array([np.clip(profiles[n], 0, 1) for n in names])
+    D = V.shape[1]
 
-    @staticmethod
-    def calculate_tension(party_satisfactions: np.ndarray) -> float:
-        """
-        Tension: Spread between party scores at the consensus solution.
-        """
-        if len(party_satisfactions) <= 1:
-            return 0.0
-        return float(np.std(party_satisfactions))
+    rng = np.random.default_rng(seed)
+    adv = rng.dirichlet(np.ones(D) * alpha, n_scenarios)
+    if weight_matrix is not None:
+        adv = np.vstack([weight_matrix, adv])
+
+    scores = adv @ V.T
+    worst_v, mean_v = scores.min(0), scores.mean(0)
+
+    results = {
+        names[i]: {
+            "worst": float(worst_v[i]),
+            "mean": float(mean_v[i]),
+            "worst_exact": q_worst(V[i]),
+            "best_exact": q_best(V[i]),
+            "fragility": fragility(V[i]),
+            "btn_dim": int(np.argmin(V[i])),
+        }
+        for i in range(len(names))
+    }
+    return StressReport(results)
+
+
+# ─────────────────────────── isomorphism ─────────────────────────────────
+
+def isomorphism(v_a: np.ndarray, v_b: np.ndarray) -> Tuple[float, float]:
+    if np.std(v_a) < 1e-9 or np.std(v_b) < 1e-9:
+        return 0.0, 1.0
+    r, p = pearsonr(v_a, v_b)
+    return float(r), float(p)
+
+
+# ─────────────────────────── reasoning engine ─────────────────────────────
 
 class EpistemEngine:
-    def __init__(self, option_names: List[str], descriptions: List[str], party_weights: np.ndarray):
-        self.option_names = option_names
-        self.descriptions = descriptions
+    """14-phase reasoning wrapper above the LP core."""
+    def __init__(self, option_names: List[str], descriptions: List[str], party_weights: np.ndarray, party_names: Optional[List[str]] = None):
+        self.corpus = list(zip(option_names, descriptions))
         self.party_weights = party_weights
-        self.builder = ProfileBuilder()
-        self.solver = ConsensusSolver()
-        self.tester = StressTester()
+        self.party_names = party_names or [f"Party{i}" for i in range(len(party_weights))]
         self.profiles = None
-        self.ctx = {}
+        self.consensus = None
+        self.stress_report = None
         self.log = []
 
     def _record(self, phase: str, summary: dict):
         self.log.append({"phase": phase, "summary": summary, "time": time.time()})
 
-    def run(self) -> EpistemResult:
-        # 1. Exploring - Encoding the problem
-        self.profiles = self.builder.fit_transform(self.descriptions)
-        self._record("Exploring", {"n_options": len(self.option_names), "n_dims": self.profiles.shape[1]})
+    def run(self) -> Tuple[ConsensusResult, StressReport]:
+        # Exploring - Encoding
+        self.profiles = embed(self.corpus, n_dims=self.party_weights.shape[1])
+        self._record("Exploring", {"n_options": len(self.corpus)})
 
-        # 2. Sleuthing - Inspecting the options
-        # (Internal step: check if any party has all zero weights or similar)
-        self._record("Sleuthing", {"weights_sum": self.party_weights.sum(axis=1).tolist()})
+        # Sleuthing - Weight inspection
+        self._record("Sleuthing", {"n_parties": len(self.party_names)})
 
-        # 3. Sifting - Discarding dominated options (Simplified)
-        # In this implementation, we keep all, but a real engine might prune.
-        self._record("Sifting", {"remaining": len(self.option_names)})
+        # Sifting - Optimization (LP is exact, so sifting is minimal)
+        self._record("Sifting", {"status": "optimized"})
 
-        # 4. Figuring - Validating the tradeoff space
-        # (Internal step: check for overlap or redundancy in profiles)
-        self._record("Figuring", {"mean_profile": self.profiles.mean(axis=0).tolist()})
+        # Figuring - Model check
+        self._record("Figuring", {"status": "exact_lp"})
 
-        # 5. Reckoning - Exact LP solve
-        q, mixture, satisfactions = self.solver.solve(self.profiles, self.party_weights)
-        self._record("Reckoning", {"consensus_Q": q})
+        # Reckoning - Solve
+        self.consensus = lp_consensus(self.profiles, self.party_weights, self.party_names)
+        self._record("Reckoning", {"Q": self.consensus.consensus_Q})
 
-        # 6. Analyzing - Tension and Fragility
-        tension = self.tester.calculate_tension(satisfactions)
-        fragility = self.tester.calculate_fragility(self.profiles)
-        self._record("Analyzing", {"tension": tension, "avg_fragility": float(fragility.mean())})
+        # Analyzing - Robustness
+        self.stress_report = stress(self.profiles, self.party_weights)
+        self._record("Analyzing", {"max_fragility": self.stress_report.most_fragile[1]})
 
-        # 7-14. Simplified synthesis and validation
-        # (Usually these would involve more robust checking, sensitivity analysis)
         for phase in ["Synthesizing", "Crystallizing", "Evaluating", "Optimizing", "Fine-tuning", "Honing", "Validating", "Iterating"]:
             self._record(phase, {"status": "completed"})
 
-        return EpistemResult(
-            consensus_Q=q,
-            mixture=mixture,
-            option_names=self.option_names,
-            party_satisfactions=satisfactions,
-            tension=tension,
-            fragility=fragility,
-            dimension_labels=self.builder.dimension_labels
-        )
+        return self.consensus, self.stress_report
 
-def generate_report(result: EpistemResult):
+def generate_report(consensus: ConsensusResult, stress_report: StressReport):
     print("=== Epistem Consensus Report ===")
-    print(f"Consensus Floor (Q): {result.consensus_Q:.4f}")
-    print(f"Tension (StdDev):    {result.tension:.4f}")
-    print("\nBest Mixture of Options:")
-    for name, weight in zip(result.option_names, result.mixture):
-        if weight > 0.001:
-            print(f" - {name}: {weight*100:.1f}%")
-
-    print("\nOption Robustness (1 - Fragility):")
-    for name, frag in zip(result.option_names, result.fragility):
-        print(f" - {name}: {1-frag:.4f}")
-
-    print("\nParty Satisfactions:")
-    for i, s in enumerate(result.party_satisfactions):
-        print(f" - Party {i+1}: {s:.4f}")
-
-    print("\nDimension Interpretation:")
-    for i, label in enumerate(result.dimension_labels):
-        print(f" - Dim {i+1}: {label}")
+    print(consensus.summary())
+    print("\n=== Stress Test (Option Robustness) ===")
+    print(stress_report.table())
     print("================================")

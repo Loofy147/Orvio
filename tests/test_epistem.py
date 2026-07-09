@@ -1,57 +1,50 @@
 import pytest
 import numpy as np
-from epistem import ProfileBuilder, ConsensusSolver, StressTester, EpistemEngine
+from epistem import embed, lp_consensus, stress, q_worst, q_best, fragility, EpistemEngine
 
-def test_profile_builder():
-    builder = ProfileBuilder(n_dimensions=2)
-    descriptions = [
-        "fast and cheap",
-        "slow and expensive",
-        "medium speed and medium cost"
+def test_embed():
+    corpus = [
+        ("A", "fast and cheap"),
+        ("B", "slow and expensive"),
+        ("C", "medium speed and medium cost")
     ]
-    profiles = builder.fit_transform(descriptions)
-    assert profiles.shape == (3, 2)
-    assert np.all(profiles >= 0) and np.all(profiles <= 1)
-    assert len(builder.dimension_labels) == 2
+    profiles = embed(corpus, n_dims=4)
+    assert len(profiles) == 4 # Includes __padded_dims__
+    assert profiles["A"].shape == (4,)
+    assert np.all(profiles["A"] >= 0.15) and np.all(profiles["A"] <= 0.85)
 
-def test_consensus_solver():
-    solver = ConsensusSolver()
-    # 2 options, 2 dimensions
-    profiles = np.array([
-        [1.0, 0.0],
-        [0.0, 1.0]
-    ])
+def test_lp_consensus():
+    profiles = {
+        "A": np.array([1.0, 0.0]),
+        "B": np.array([0.0, 1.0])
+    }
     # 2 parties
-    # Party 1 likes Dim 1
-    # Party 2 likes Dim 2
     weights = np.array([
         [1.0, 0.0],
         [0.0, 1.0]
     ])
 
-    q, mixture, satisfactions = solver.solve(profiles, weights)
+    res = lp_consensus(profiles, weights)
 
-    # Best compromise for two people wanting opposite things should be 50/50
-    assert pytest.approx(q) == 0.5
-    assert pytest.approx(mixture[0]) == 0.5
-    assert pytest.approx(mixture[1]) == 0.5
-    assert pytest.approx(satisfactions[0]) == 0.5
-    assert pytest.approx(satisfactions[1]) == 0.5
+    assert pytest.approx(res.consensus_Q) == 0.5
+    assert pytest.approx(res.mixture["A"]) == 0.5
+    assert pytest.approx(res.mixture["B"]) == 0.5
 
-def test_stress_tester():
-    tester = StressTester()
-    profiles = np.array([
-        [1.0, 0.2, 0.5],
-        [0.1, 0.9, 0.3]
-    ])
-    fragility = tester.calculate_fragility(profiles)
-    assert np.array_equal(fragility, np.array([0.2, 0.1]))
+def test_adversarial():
+    v = np.array([0.2, 0.8, 0.5])
+    assert q_worst(v) == 0.2
+    assert q_best(v) == 0.8
+    assert pytest.approx(fragility(v)) == 0.6
 
-    tension = tester.calculate_tension(np.array([0.5, 0.5]))
-    assert tension == 0.0
-
-    tension_spread = tester.calculate_tension(np.array([0.4, 0.6]))
-    assert tension_spread > 0
+def test_stress():
+    profiles = {
+        "A": np.array([0.2, 0.8]),
+        "B": np.array([0.5, 0.5])
+    }
+    report = stress(profiles)
+    assert "A" in report.results
+    assert "B" in report.results
+    assert report.results["A"]["fragility"] > report.results["B"]["fragility"]
 
 def test_epistem_engine():
     options = ["Opt A", "Opt B"]
@@ -59,10 +52,8 @@ def test_epistem_engine():
     weights = np.array([[0.5, 0.5], [0.5, 0.5]])
 
     engine = EpistemEngine(options, descriptions, weights)
-    result = engine.run()
+    consensus, report = engine.run()
 
-    assert result.consensus_Q >= 0
-    assert len(result.mixture) == 2
-    assert len(result.option_names) == 2
-    assert len(result.dimension_labels) > 0
-    assert len(engine.log) >= 14 # Checking 14 phases
+    assert consensus.consensus_Q >= 0
+    assert len(consensus.mixture) >= 1
+    assert len(engine.log) >= 14
