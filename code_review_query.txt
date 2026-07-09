@@ -1,0 +1,14 @@
+I have implemented the Epistem system, which is a specialized optimization engine for finding the best compromise (maximin) among parties with differing weights over options.
+
+Key modules:
+1. ProfileBuilder: TF-IDF + SVD for text-to-profile encoding.
+2. ConsensusSolver: LP-based maximin solver using scipy.optimize.linprog.
+3. StressTester: Fragility (min-score) and Tension (satisfaction std-dev) analysis.
+4. EpistemEngine: A 14-phase pipeline (Exploring, Sleuthing, ..., Iterating) wrapping the LP core for robustness and explanation.
+
+I've also added a demo script (examples/epistem_hiring.py) and unit tests (tests/test_epistem.py).
+
+Please review for:
+- Mathematical correctness of the maximin formulation.
+- Robustness of the text-encoding pipeline.
+- Adherence to the requested 14-phase engine structure.
