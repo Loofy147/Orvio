@@ -6,8 +6,7 @@ Three primitives:
   lp_consensus(profiles, W)   exact LP, global optimum, one HiGHS call
   stress(profiles)            vectorised adversarial battery + exact greedy worst-case
 
-Single file by design: Consolidating to one file until there's a
-reason (size, reuse across unrelated projects) to split it again.
+Consolidated single-file architecture.
 """
 from __future__ import annotations
 import numpy as np
@@ -16,7 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 from scipy.optimize import linprog
 from scipy.stats import pearsonr
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Any
 import warnings
 
@@ -41,14 +40,18 @@ def embed(
     TF-IDF + TruncatedSVD -> profiles scaled to [lo, hi] per dimension.
 
     If len(corpus) <= n_dims, SVD produces k < n_dims real components.
-    The remaining dimensions are padded with pad_value.
+    The remaining dimensions are padded with pad_value to maintain consistency.
+
+    By default, pad_value is set to hi to ensure that uninformative
+    padded dimensions never falsely win the argmin() bottleneck in downstream
+    adversarial calculations (like q_worst/fragility).
     """
     names = [c[0] for c in corpus]
     texts = [c[1] for c in corpus]
     n = len(texts)
     k = min(n_dims, n - 1, 50)
     if k < 1:
-        # Fallback if only 1 text: can't do SVD properly, but let's be robust
+        # Robust fallback for very small corpora
         if n == 1:
              return {names[0]: np.full(n_dims, hi)}
         raise ValueError(f"embed() needs at least 2 texts, got {n}")
@@ -56,16 +59,10 @@ def embed(
     if pad_value is None:
         pad_value = hi
 
-    X = TfidfVectorizer(
-        ngram_range=ngram_range,
-        min_df=1,
-        sublinear_tf=True
-    ).fit_transform(texts)
-
+    X = TfidfVectorizer(ngram_range=ngram_range, min_df=1, sublinear_tf=True).fit_transform(texts)
     proj = TruncatedSVD(n_components=k, random_state=random_state).fit_transform(X)
 
     padded = k < n_dims
-
     col_min, col_max = proj.min(0), proj.max(0)
     rng = np.where(col_max - col_min < 1e-9, 1.0, col_max - col_min)
     scaled_genuine = lo + (hi - lo) * (proj - col_min) / rng
@@ -84,7 +81,11 @@ def embed(
     if dupes:
         warnings.warn(
             f"embed() produced identical profiles for {dupes} -- these theories "
-            f"are now mathematically indistinguishable. Fix: longer, more specific texts.",
+            f"are now mathematically indistinguishable to lp_consensus/stress. "
+            f"This happens when input texts are short and share little "
+            f"distinguishing vocabulary beyond common words; TruncatedSVD has "
+            f"no signal left to separate them. Fix: write longer, more specific "
+            f"descriptions (30+ words with concrete distinguishing details).",
             UserWarning,
             stacklevel=2,
         )
@@ -92,6 +93,7 @@ def embed(
 
 
 def _find_collisions(profiles: Dict[str, np.ndarray], atol: float = 1e-6) -> List[List[str]]:
+    """Group theory names whose profiles are numerically identical."""
     names = [n for n in profiles if not n.startswith("__")]
     groups: Dict[Tuple[float, ...], List[str]] = {}
     for n in names:
@@ -103,14 +105,17 @@ def _find_collisions(profiles: Dict[str, np.ndarray], atol: float = 1e-6) -> Lis
 # ───────────────────────── exact adversarial ─────────────────────────────
 
 def q_worst(v: np.ndarray) -> float:
+    """Exact worst-case score over all weight vectors in the simplex: O(D)."""
     return float(np.min(np.clip(v, 0, 1)))
 
 
 def q_best(v: np.ndarray) -> float:
+    """Exact best-case score over all weight vectors in the simplex: O(D)."""
     return float(np.max(np.clip(v, 0, 1)))
 
 
 def fragility(v: np.ndarray) -> float:
+    """The vulnerability margin between the best and worst-case scenario outcomes."""
     return q_best(v) - q_worst(v)
 
 
@@ -132,8 +137,7 @@ class ConsensusResult:
         return max(self.mixture.items(), key=lambda x: x[1])
 
     def summary(self, name: str = "") -> str:
-        lines = [f"{name or 'Consensus'}: Q={self.consensus_Q:.4f} "
-                 f"tension={self.tension:.4f} "
+        lines = [f"{name or 'Consensus'}: Q={self.consensus_Q:.4f} tension={self.tension:.4f} "
                  f"{'DEADLOCK' if self.deadlock else 'resolved'}"]
         for p, s in sorted(self.party_scores.items(), key=lambda x: -x[1]):
             lines.append(f"  {p:20s} {s:.4f}")
@@ -149,6 +153,7 @@ def lp_consensus(
     party_names: Optional[List[str]] = None,
     deadlock_threshold: float = 0.08,
 ) -> ConsensusResult:
+    """Exact LP optimization on the theory manifold (convex hull of actual theories)."""
     names = [n for n in profiles if not n.startswith("__")]
     T = np.array([profiles[n] for n in names]).T
     N, nw = len(names), weight_matrix.shape[0]
@@ -156,22 +161,28 @@ def lp_consensus(
     if party_names is None:
         party_names = [f"Party{i}" for i in range(nw)]
     if len(party_names) != nw:
-        raise ValueError(f"party_names ({len(party_names)}) != weight_matrix rows ({nw})")
+        raise ValueError(
+            f"party_names has {len(party_names)} entries but weight_matrix "
+            f"has {nw} rows -- they must match 1:1."
+        )
 
-    c = np.zeros(N + 1)
-    c[-1] = -1.0
+    c = np.zeros(N + 1); c[-1] = -1.0
     Au = np.zeros((nw, N + 1))
     Au[:, :N] = -(weight_matrix @ T)
     Au[:, -1] = 1.0
-    Ae = np.zeros((1, N + 1))
-    Ae[0, :N] = 1.0
+    Ae = np.zeros((1, N + 1)); Ae[0, :N] = 1.0
 
     res = linprog(c, A_ub=Au, b_ub=np.zeros(nw),
                   A_eq=Ae, b_eq=np.array([1.0]),
                   bounds=[(0, None)] * N + [(0, None)], method="highs")
 
     if not res.success:
-        warnings.warn(f"lp_consensus failed: {res.message}. Falling back to uniform.", RuntimeWarning)
+        warnings.warn(
+            f"lp_consensus solver failed to converge (status: {res.status}, message: {res.message}). "
+            f"Falling back to an equal uniform mixture of all theories.",
+            RuntimeWarning,
+            stacklevel=2
+        )
         v_fb = T @ (np.ones(N) / N)
         return ConsensusResult(float(np.min(weight_matrix @ v_fb)), v_fb, {}, {}, 0.0, False)
 
@@ -182,12 +193,10 @@ def lp_consensus(
     t_opt = float(res.x[-1])
 
     mixture = {names[i]: float(lam[i]) for i in range(N) if lam[i] > 0.01}
-    party_scores = {party_names[j]: float(np.dot(weight_matrix[j], v_opt))
-                     for j in range(nw)}
+    party_scores = {party_names[j]: float(np.dot(weight_matrix[j], v_opt)) for j in range(nw)}
     tension = float(np.std(list(party_scores.values())))
 
-    return ConsensusResult(t_opt, v_opt, mixture, party_scores, tension,
-                            tension > deadlock_threshold)
+    return ConsensusResult(t_opt, v_opt, mixture, party_scores, tension, tension > deadlock_threshold)
 
 
 # ─────────────────────────── stress testing ──────────────────────────────
@@ -209,11 +218,8 @@ class StressReport:
     def table(self, dim_labels: Optional[List[str]] = None) -> str:
         lines = [f"{'name':24s} {'worst':>7} {'mean':>7} {'frag':>7}  bottleneck"]
         for n, d in sorted(self.results.items(), key=lambda x: x[1]["fragility"]):
-            btn = (dim_labels[d["btn_dim"]]
-                   if dim_labels and d["btn_dim"] < len(dim_labels)
-                   else f"dim{d['btn_dim']}")
-            lines.append(f"{n:24s} {d['worst']:>7.4f} {d['mean']:>7.4f} "
-                         f"{d['fragility']:>7.4f}  {btn}")
+            btn = (dim_labels[d["btn_dim"]] if dim_labels and d["btn_dim"] < len(dim_labels) else f"dim{d['btn_dim']}")
+            lines.append(f"{n:24s} {d['worst']:>7.4f} {d['mean']:>7.4f} {d['fragility']:>7.4f}  {btn}")
         return "\n".join(lines)
 
 
@@ -224,6 +230,7 @@ def stress(
     alpha: float = 0.4,
     seed: Optional[int] = None,
 ) -> StressReport:
+    """One matrix multiply covering n_scenarios adversarial weight vectors."""
     names = [n for n in profiles if not n.startswith("__")]
     V = np.array([np.clip(profiles[n], 0, 1) for n in names])
     D = V.shape[1]
@@ -253,6 +260,7 @@ def stress(
 # ─────────────────────────── isomorphism ─────────────────────────────────
 
 def isomorphism(v_a: np.ndarray, v_b: np.ndarray) -> Tuple[float, float]:
+    """Pearson r and p-value between two profiles. Safeguarded against constant inputs."""
     if np.std(v_a) < 1e-9 or np.std(v_b) < 1e-9:
         return 0.0, 1.0
     r, p = pearsonr(v_a, v_b)

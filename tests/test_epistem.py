@@ -48,8 +48,11 @@ def test_stress():
 
 def test_epistem_engine():
     options = ["Opt A", "Opt B"]
-    descriptions = ["High quality low cost", "Low quality high cost"]
-    weights = np.array([[0.5, 0.5], [0.5, 0.5]])
+    descriptions = [
+        "High quality low cost, very efficient and reliable solution for long term.",
+        "Low quality high cost, expensive and prone to failure, not recommended."
+    ]
+    weights = np.array([[0.5, 0.5, 0.0, 0.0], [0.0, 0.0, 0.5, 0.5]])
 
     engine = EpistemEngine(options, descriptions, weights)
     consensus, report = engine.run()
