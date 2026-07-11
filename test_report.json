@@ -1,0 +1,970 @@
+{
+  "best_score": 0.0,
+  "best_x": [
+    0.0,
+    0.0
+  ],
+  "report": [
+    "Orchestrator: Portfolio selection: ['GlobalExploring', 'SurrogateGuided', 'LocalRefining']. Parallel=False"
+  ],
+  "portfolio": [
+    {
+      "best_x": [
+        0.0,
+        0.0
+      ],
+      "best_score": 0.0,
+      "rounds_run": 3,
+      "converged": false,
+      "eval_count": 292,
+      "is_deterministic": true,
+      "phase_stats": {
+        "Probing": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": []
+        },
+        "Exploring": {
+          "improvement": 0.0,
+          "evals": 160,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 80
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 80
+            }
+          ]
+        },
+        "Sleuthing": {
+          "improvement": 0.0,
+          "evals": 40,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 20
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 20
+            }
+          ]
+        },
+        "Sifting": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Figuring": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Reckoning": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 1
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 1
+            }
+          ]
+        },
+        "Analyzing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Synthesizing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Crystallizing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Evaluating": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Optimizing": {
+          "improvement": 0.0,
+          "evals": 24,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 12
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 12
+            }
+          ]
+        },
+        "Fine-tuning": {
+          "improvement": 0.0,
+          "evals": 40,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 20
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 20
+            }
+          ]
+        },
+        "Honing": {
+          "improvement": 0.0,
+          "evals": 22,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 11
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 11
+            }
+          ]
+        },
+        "Validating": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 1
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 1
+            }
+          ]
+        },
+        "Iterating": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        }
+      },
+      "seed": 8506,
+      "mode": "GlobalExploring",
+      "basin_archive": [],
+      "log": [
+        {
+          "round": 1,
+          "phase": "Exploring",
+          "summary": {
+            "best": 0.10992295063149679
+          },
+          "duration_s": 0.0005509853363037109
+        },
+        {
+          "round": 1,
+          "phase": "Sleuthing",
+          "summary": {
+            "best": 0.04380189847303526
+          },
+          "duration_s": 0.00036787986755371094
+        },
+        {
+          "round": 1,
+          "phase": "Sifting",
+          "summary": {
+            "kept": 30
+          },
+          "duration_s": 2.47955322265625e-05
+        },
+        {
+          "round": 1,
+          "phase": "Figuring",
+          "summary": {
+            "model": "Quadratic",
+            "n_params": 5,
+            "ridge_lambda": 0.01,
+            "interactions": false
+          },
+          "duration_s": 0.00019240379333496094
+        },
+        {
+          "round": 1,
+          "phase": "Reckoning",
+          "summary": {
+            "score": 0.08451378604370886
+          },
+          "duration_s": 0.0002205371856689453
+        },
+        {
+          "round": 1,
+          "phase": "Analyzing",
+          "summary": {
+            "mean": 0.7651410315471895
+          },
+          "duration_s": 1.430511474609375e-05
+        },
+        {
+          "round": 1,
+          "phase": "Synthesizing",
+          "summary": {
+            "pool_size": 31
+          },
+          "duration_s": 1.5497207641601562e-05
+        },
+        {
+          "round": 1,
+          "phase": "Crystallizing",
+          "summary": {
+            "score": 0.04380189847303526
+          },
+          "duration_s": 9.775161743164062e-06
+        },
+        {
+          "round": 1,
+          "phase": "Evaluating",
+          "summary": {
+            "improvement": Infinity
+          },
+          "duration_s": 1.6689300537109375e-06
+        },
+        {
+          "round": 1,
+          "phase": "Optimizing",
+          "summary": {
+            "score": 0.0068941625073036744
+          },
+          "duration_s": 0.00020384788513183594
+        },
+        {
+          "round": 1,
+          "phase": "Fine-tuning",
+          "summary": {
+            "score": 0.001112330926576742
+          },
+          "duration_s": 0.0003223419189453125
+        },
+        {
+          "round": 1,
+          "phase": "Honing",
+          "summary": {
+            "score": 0.001112330926576742
+          },
+          "duration_s": 0.0002262592315673828
+        },
+        {
+          "round": 1,
+          "phase": "Validating",
+          "summary": {
+            "mean": 0.001112330926576742
+          },
+          "duration_s": 7.319450378417969e-05
+        },
+        {
+          "round": 1,
+          "phase": "Iterating",
+          "summary": {
+            "action": "refine",
+            "reason": "Improvement found; refining locally."
+          },
+          "duration_s": 2.1457672119140625e-06
+        },
+        {
+          "round": 2,
+          "phase": "Exploring",
+          "summary": {
+            "best": 0.20184682478333785
+          },
+          "duration_s": 0.0005557537078857422
+        },
+        {
+          "round": 2,
+          "phase": "Sleuthing",
+          "summary": {
+            "best": 0.020501008659903213
+          },
+          "duration_s": 0.0003459453582763672
+        },
+        {
+          "round": 2,
+          "phase": "Sifting",
+          "summary": {
+            "kept": 30
+          },
+          "duration_s": 2.47955322265625e-05
+        },
+        {
+          "round": 2,
+          "phase": "Figuring",
+          "summary": {
+            "model": "Quadratic",
+            "n_params": 5,
+            "ridge_lambda": 0.01,
+            "interactions": false
+          },
+          "duration_s": 0.0001785755157470703
+        },
+        {
+          "round": 2,
+          "phase": "Reckoning",
+          "summary": {
+            "score": 0.06595585725690059
+          },
+          "duration_s": 0.00022983551025390625
+        },
+        {
+          "round": 2,
+          "phase": "Analyzing",
+          "summary": {
+            "mean": 1.1228956796360958
+          },
+          "duration_s": 1.52587890625e-05
+        },
+        {
+          "round": 2,
+          "phase": "Synthesizing",
+          "summary": {
+            "pool_size": 31
+          },
+          "duration_s": 1.5497207641601562e-05
+        },
+        {
+          "round": 2,
+          "phase": "Crystallizing",
+          "summary": {
+            "score": 0.020501008659903213
+          },
+          "duration_s": 9.298324584960938e-06
+        },
+        {
+          "round": 2,
+          "phase": "Evaluating",
+          "summary": {
+            "improvement": -0.019388677733326472
+          },
+          "duration_s": 9.5367431640625e-07
+        },
+        {
+          "round": 2,
+          "phase": "Optimizing",
+          "summary": {
+            "score": 0.005839971329734923
+          },
+          "duration_s": 0.0002498626708984375
+        },
+        {
+          "round": 2,
+          "phase": "Fine-tuning",
+          "summary": {
+            "score": 0.0013653242914764738
+          },
+          "duration_s": 0.00031185150146484375
+        },
+        {
+          "round": 2,
+          "phase": "Honing",
+          "summary": {
+            "score": 0.0009079637612671604
+          },
+          "duration_s": 0.00023174285888671875
+        },
+        {
+          "round": 2,
+          "phase": "Validating",
+          "summary": {
+            "mean": 0.0009079637612671604
+          },
+          "duration_s": 3.0040740966796875e-05
+        },
+        {
+          "round": 2,
+          "phase": "Iterating",
+          "summary": {
+            "action": "refine",
+            "reason": "Improvement found; refining locally."
+          },
+          "duration_s": 2.384185791015625e-06
+        }
+      ]
+    },
+    {
+      "best_x": [
+        0.0,
+        0.0
+      ],
+      "best_score": 0.0,
+      "rounds_run": 3,
+      "converged": false,
+      "eval_count": 252,
+      "is_deterministic": true,
+      "phase_stats": {
+        "Probing": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": []
+        },
+        "Exploring": {
+          "improvement": 0.0,
+          "evals": 80,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 40
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 40
+            }
+          ]
+        },
+        "Sleuthing": {
+          "improvement": 0.0,
+          "evals": 80,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 40
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 40
+            }
+          ]
+        },
+        "Sifting": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Figuring": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Reckoning": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 1
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 1
+            }
+          ]
+        },
+        "Analyzing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Synthesizing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Crystallizing": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Evaluating": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        },
+        "Optimizing": {
+          "improvement": 0.0,
+          "evals": 24,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 12
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 12
+            }
+          ]
+        },
+        "Fine-tuning": {
+          "improvement": 0.0,
+          "evals": 40,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 20
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 20
+            }
+          ]
+        },
+        "Honing": {
+          "improvement": 0.0,
+          "evals": 22,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 11
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 11
+            }
+          ]
+        },
+        "Validating": {
+          "improvement": 0.0,
+          "evals": 2,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 1
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 1
+            }
+          ]
+        },
+        "Iterating": {
+          "improvement": 0.0,
+          "evals": 0,
+          "history": [
+            {
+              "round": 1,
+              "improvement": 0.0,
+              "evals": 0
+            },
+            {
+              "round": 2,
+              "improvement": 0.0,
+              "evals": 0
+            }
+          ]
+        }
+      },
+      "seed": 6369,
+      "mode": "SurrogateGuided",
+      "basin_archive": [],
+      "log": [
+        {
+          "round": 1,
+          "phase": "Exploring",
+          "summary": {
+            "best": 1.4016687983433664
+          },
+          "duration_s": 0.00030303001403808594
+        },
+        {
+          "round": 1,
+          "phase": "Sleuthing",
+          "summary": {
+            "best": 0.7244195576832915
+          },
+          "duration_s": 0.0004787445068359375
+        },
+        {
+          "round": 1,
+          "phase": "Sifting",
+          "summary": {
+            "kept": 30
+          },
+          "duration_s": 2.6464462280273438e-05
+        },
+        {
+          "round": 1,
+          "phase": "Figuring",
+          "summary": {
+            "model": "Quadratic",
+            "n_params": 6,
+            "ridge_lambda": 0.0125,
+            "interactions": true
+          },
+          "duration_s": 0.00019669532775878906
+        },
+        {
+          "round": 1,
+          "phase": "Reckoning",
+          "summary": {
+            "score": 0.022162780144758955
+          },
+          "duration_s": 0.0002796649932861328
+        },
+        {
+          "round": 1,
+          "phase": "Analyzing",
+          "summary": {
+            "mean": 2.4038752873064406
+          },
+          "duration_s": 1.4066696166992188e-05
+        },
+        {
+          "round": 1,
+          "phase": "Synthesizing",
+          "summary": {
+            "pool_size": 31
+          },
+          "duration_s": 1.5020370483398438e-05
+        },
+        {
+          "round": 1,
+          "phase": "Crystallizing",
+          "summary": {
+            "score": 0.022162780144758955
+          },
+          "duration_s": 1.0251998901367188e-05
+        },
+        {
+          "round": 1,
+          "phase": "Evaluating",
+          "summary": {
+            "improvement": Infinity
+          },
+          "duration_s": 1.1920928955078125e-06
+        },
+        {
+          "round": 1,
+          "phase": "Optimizing",
+          "summary": {
+            "score": 0.022162780144758955
+          },
+          "duration_s": 0.00025010108947753906
+        },
+        {
+          "round": 1,
+          "phase": "Fine-tuning",
+          "summary": {
+            "score": 0.011369927183166942
+          },
+          "duration_s": 0.00030875205993652344
+        },
+        {
+          "round": 1,
+          "phase": "Honing",
+          "summary": {
+            "score": 0.0019565846884994865
+          },
+          "duration_s": 0.00022411346435546875
+        },
+        {
+          "round": 1,
+          "phase": "Validating",
+          "summary": {
+            "mean": 0.0019565846884994865
+          },
+          "duration_s": 3.123283386230469e-05
+        },
+        {
+          "round": 1,
+          "phase": "Iterating",
+          "summary": {
+            "action": "refine",
+            "reason": "Improvement found; refining locally."
+          },
+          "duration_s": 2.384185791015625e-06
+        },
+        {
+          "round": 2,
+          "phase": "Exploring",
+          "summary": {
+            "best": 0.08980054325505932
+          },
+          "duration_s": 0.0003428459167480469
+        },
+        {
+          "round": 2,
+          "phase": "Sleuthing",
+          "summary": {
+            "best": 0.04928464168220808
+          },
+          "duration_s": 0.00044608116149902344
+        },
+        {
+          "round": 2,
+          "phase": "Sifting",
+          "summary": {
+            "kept": 30
+          },
+          "duration_s": 2.3603439331054688e-05
+        },
+        {
+          "round": 2,
+          "phase": "Figuring",
+          "summary": {
+            "model": "Quadratic",
+            "n_params": 6,
+            "ridge_lambda": 0.0125,
+            "interactions": true
+          },
+          "duration_s": 0.00022983551025390625
+        },
+        {
+          "round": 2,
+          "phase": "Reckoning",
+          "summary": {
+            "score": 0.006089019751076124
+          },
+          "duration_s": 0.00028061866760253906
+        },
+        {
+          "round": 2,
+          "phase": "Analyzing",
+          "summary": {
+            "mean": 0.9887549973107733
+          },
+          "duration_s": 1.4066696166992188e-05
+        },
+        {
+          "round": 2,
+          "phase": "Synthesizing",
+          "summary": {
+            "pool_size": 31
+          },
+          "duration_s": 1.6689300537109375e-05
+        },
+        {
+          "round": 2,
+          "phase": "Crystallizing",
+          "summary": {
+            "score": 0.006089019751076124
+          },
+          "duration_s": 1.0251998901367188e-05
+        },
+        {
+          "round": 2,
+          "phase": "Evaluating",
+          "summary": {
+            "improvement": -0.004132435062576638
+          },
+          "duration_s": 9.5367431640625e-07
+        },
+        {
+          "round": 2,
+          "phase": "Optimizing",
+          "summary": {
+            "score": 0.006089019751076124
+          },
+          "duration_s": 0.00019478797912597656
+        },
+        {
+          "round": 2,
+          "phase": "Fine-tuning",
+          "summary": {
+            "score": 0.0005144657485678898
+          },
+          "duration_s": 0.0003681182861328125
+        },
+        {
+          "round": 2,
+          "phase": "Honing",
+          "summary": {
+            "score": 0.0005144657485678898
+          },
+          "duration_s": 0.00023126602172851562
+        },
+        {
+          "round": 2,
+          "phase": "Validating",
+          "summary": {
+            "mean": 0.0005144657485678898
+          },
+          "duration_s": 3.123283386230469e-05
+        },
+        {
+          "round": 2,
+          "phase": "Iterating",
+          "summary": {
+            "action": "refine",
+            "reason": "Improvement found; refining locally."
+          },
+          "duration_s": 2.384185791015625e-06
+        }
+      ]
+    }
+  ]
+}
